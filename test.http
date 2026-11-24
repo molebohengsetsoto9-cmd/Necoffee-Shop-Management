@@ -38,3 +38,31 @@ Content-Type: application/json
   "category": "Tea",
   "availability": true
 }
+###
+GET  http://localhost:5000/api/menu
+
+###
+DELETE http://localhost:5000/api/menu/4f89ac3b-8970-47bd-becd-e445d6133ada
+###
+DELETE  http://localhost:5000/api/menu/58e4d079-2124-4691-9dc1-3bfdda6527b0
+###
+DELETE  http://localhost:5000/api/menu/c0a3c0e2-589d-4a5e-8fd4-b9f3638b228d
+###
+POST http://localhost:5000/api/menu
+Content-Type: application/json
+
+{
+  "name": "Chocolate Muffin",
+  "description": "Freshly baked chocolate muffin",
+  "price": 18,
+  "category": "Pastries",
+  "availability": true
+}
+###
+POST http://localhost:5000/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "YourOwnStrongPassword123"
+}

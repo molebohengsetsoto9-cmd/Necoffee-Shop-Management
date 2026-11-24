@@ -1,3 +1,4 @@
+
 import { useEffect, useState } from "react";
 import "./App.css";
 
@@ -14,8 +15,11 @@ const productImages = {
 
 function getProductImage(name) {
   const key = name?.toLowerCase().trim();
-  return productImages[key] ||
-    "https://images.unsplash.com/photo-1442512595331-e89e73853f31?auto=format&fit=crop&w=800&q=80";
+
+  return (
+    productImages[key] ||
+    "https://images.unsplash.com/photo-1442512595331-e89e73853f31?auto=format&fit=crop&w=800&q=80"
+  );
 }
 
 function App() {
@@ -27,29 +31,15 @@ function App() {
   const [message, setMessage] = useState("");
   const [customerName, setCustomerName] = useState("");
 
-  // --- STAFF LOGIN ---
-  const [staffPassword, setStaffPassword] = useState("");
-  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(false);
-  const STAFF_PASSWORD = "coffee123";
+  // Staff authentication
+  const [token, setToken] = useState(
+    () => localStorage.getItem("staffToken") || ""
+  );
 
-  function handleStaffLogin(event) {
-    event.preventDefault();
-    if (staffPassword === STAFF_PASSWORD) {
-      setIsStaffLoggedIn(true);
-      setStaffPassword("");
-      setPage("staff");
-      setMessage("Welcome, staff!");
-    } else {
-      setMessage("Wrong staff password. Try again.");
-    }
-  }
-
-  function handleStaffLogout() {
-    setIsStaffLoggedIn(false);
-    setStaffPassword("");
-    setPage("home");
-    setMessage("Staff logged out.");
-  }
+  const [loginForm, setLoginForm] = useState({
+    username: "",
+    password: "",
+  });
 
   const [form, setForm] = useState({
     name: "",
@@ -61,11 +51,16 @@ function App() {
 
   const [editingId, setEditingId] = useState(null);
 
+  // Load public menu
   async function loadMenu() {
     try {
       const response = await fetch(`${API}/menu`);
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Could not load menu");
+
+      if (!response.ok) {
+        throw new Error(data.message || "Could not load menu");
+      }
+
       setMenu(Array.isArray(data) ? data : data.menu || []);
     } catch (error) {
       setMessage("Menu error: " + error.message);
@@ -74,11 +69,28 @@ function App() {
     }
   }
 
-  async function loadOrders() {
+  // Load orders for authenticated staff
+  async function loadOrders(authToken = token) {
+    if (!authToken) return;
+
     try {
-      const response = await fetch(`${API}/orders`);
+      const response = await fetch(`${API}/orders`, {
+        headers: {
+          Authorization: `Bearer ${authToken}`,
+        },
+      });
+
       const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Could not load orders");
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          logout();
+          throw new Error("Your staff session has expired. Please log in again.");
+        }
+
+        throw new Error(data.message || "Could not load orders");
+      }
+
       setOrders(Array.isArray(data) ? data : data.orders || []);
     } catch (error) {
       setMessage("Orders error: " + error.message);
@@ -87,8 +99,60 @@ function App() {
 
   useEffect(() => {
     loadMenu();
-    loadOrders();
   }, []);
+
+  useEffect(() => {
+    if (token) {
+      loadOrders(token);
+    }
+  }, [token]);
+
+  // Staff login
+  async function handleLogin(event) {
+    event.preventDefault();
+
+    try {
+      const response = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(loginForm),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || "Login failed.");
+      }
+
+      if (!data.token) {
+        throw new Error("The server did not return a login token.");
+      }
+
+      localStorage.setItem("staffToken", data.token);
+      setToken(data.token);
+
+      setLoginForm({
+        username: "",
+        password: "",
+      });
+
+      setMessage("Welcome! Staff login successful.");
+    } catch (error) {
+      setMessage(error.message);
+    }
+  }
+
+  // Staff logout
+  function logout() {
+    localStorage.removeItem("staffToken");
+    setToken("");
+    setOrders([]);
+    setEditingId(null);
+    setPage("home");
+    setMessage("You have logged out successfully.");
+  }
 
   function addToCart(item) {
     if (!item.availability) {
@@ -130,6 +194,7 @@ function App() {
     0
   );
 
+  // Customer checkout
   async function checkout(event) {
     event.preventDefault();
 
@@ -141,7 +206,9 @@ function App() {
     try {
       const response = await fetch(`${API}/orders`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           customerName,
           items: cart.map((item) => ({
@@ -165,15 +232,25 @@ function App() {
 
       setCart([]);
       setCustomerName("");
-      loadOrders();
+
+      if (token) {
+        loadOrders(token);
+      }
+
       setPage("home");
     } catch (error) {
       setMessage(error.message);
     }
   }
 
+  // Add or update menu product
   async function saveMenuItem(event) {
     event.preventDefault();
+
+    if (!token) {
+      setMessage("Please log in as staff.");
+      return;
+    }
 
     const url = editingId
       ? `${API}/menu/${editingId}`
@@ -182,7 +259,10 @@ function App() {
     try {
       const response = await fetch(url, {
         method: editingId ? "PUT" : "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           ...form,
           price: Number(form.price),
@@ -196,6 +276,7 @@ function App() {
       }
 
       setMessage(editingId ? "Product updated." : "Product added.");
+
       setForm({
         name: "",
         description: "",
@@ -203,6 +284,7 @@ function App() {
         category: "Coffee",
         availability: true,
       });
+
       setEditingId(null);
       loadMenu();
     } catch (error) {
@@ -212,6 +294,7 @@ function App() {
 
   function editMenuItem(item) {
     setEditingId(item.id);
+
     setForm({
       name: item.name,
       description: item.description,
@@ -219,9 +302,11 @@ function App() {
       category: item.category,
       availability: item.availability,
     });
+
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // Delete menu product
   async function deleteMenuItem(id) {
     if (!window.confirm("Are you sure you want to delete this product?")) {
       return;
@@ -230,10 +315,15 @@ function App() {
     try {
       const response = await fetch(`${API}/menu/${id}`, {
         method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error("Could not delete product.");
+        throw new Error(data.message || "Could not delete product.");
       }
 
       setMessage("Product deleted.");
@@ -243,11 +333,15 @@ function App() {
     }
   }
 
+  // Update customer order status
   async function updateOrderStatus(id, status) {
     try {
       const response = await fetch(`${API}/orders/${id}/status`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ status }),
       });
 
@@ -258,7 +352,7 @@ function App() {
       }
 
       setMessage("Order status updated.");
-      loadOrders();
+      loadOrders(token);
     } catch (error) {
       setMessage(error.message);
     }
@@ -267,7 +361,9 @@ function App() {
   const today = new Date().toLocaleDateString();
 
   const todaysOrders = orders.filter(
-    (order) => new Date(order.createdAt).toLocaleDateString() === today
+    (order) =>
+      order.createdAt &&
+      new Date(order.createdAt).toLocaleDateString() === today
   );
 
   const dailySales = todaysOrders.reduce(
@@ -282,16 +378,16 @@ function App() {
 
         <nav>
           <button onClick={() => setPage("home")}>Home</button>
+
           <button onClick={() => setPage("menu")}>Menu</button>
+
           <button onClick={() => setPage("cart")}>
             Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)})
           </button>
-          <button onClick={() => setPage(isStaffLoggedIn ? "staff" : "staffLogin")}>
-            {isStaffLoggedIn ? "Staff Dashboard" : "Staff Login"}
+
+          <button onClick={() => setPage("staff")}>
+            Staff Dashboard
           </button>
-          {isStaffLoggedIn && (
-            <button onClick={handleStaffLogout}>Logout Staff</button>
-          )}
         </nav>
       </header>
 
@@ -302,24 +398,33 @@ function App() {
         </div>
       )}
 
+      {/* HOME PAGE */}
       {page === "home" && (
         <section className="hero">
           <div className="hero-content">
             <p className="eyebrow">WELCOME TO COFFEE HOUSE</p>
+
             <h1>Your Favourite Coffee, Made Fresh</h1>
+
             <p>
               Enjoy delicious coffee, refreshing tea and freshly baked treats.
             </p>
-            <button className="primary-button" onClick={() => setPage("menu")}>
+
+            <button
+              className="primary-button"
+              onClick={() => setPage("menu")}
+            >
               Explore Our Menu
             </button>
           </div>
         </section>
       )}
 
+      {/* MENU PAGE */}
       {(page === "home" || page === "menu") && (
         <section className="section">
           <h2>{page === "home" ? "Our Popular Menu" : "Our Menu"}</h2>
+
           <p className="section-description">
             Freshly prepared drinks and delicious treats.
           </p>
@@ -344,11 +449,14 @@ function App() {
 
                   <div className="product-info">
                     <span className="category">{item.category}</span>
+
                     <h3>{item.name}</h3>
+
                     <p>{item.description}</p>
 
                     <div className="product-bottom">
                       <strong>M{Number(item.price).toFixed(2)}</strong>
+
                       <button
                         onClick={() => addToCart(item)}
                         disabled={!item.availability}
@@ -364,6 +472,7 @@ function App() {
         </section>
       )}
 
+      {/* CART PAGE */}
       {page === "cart" && (
         <section className="section cart-section">
           <h2>Your Shopping Cart</h2>
@@ -375,19 +484,25 @@ function App() {
               {cart.map((item) => (
                 <div className="cart-item" key={item.id}>
                   <img src={getProductImage(item.name)} alt={item.name} />
+
                   <div className="cart-details">
                     <h3>{item.name}</h3>
+
                     <p>M{Number(item.price).toFixed(2)}</p>
+
                     <div className="quantity-controls">
                       <button onClick={() => changeQuantity(item.id, -1)}>
                         -
                       </button>
+
                       <span>{item.quantity}</span>
+
                       <button onClick={() => changeQuantity(item.id, 1)}>
                         +
                       </button>
                     </div>
                   </div>
+
                   <strong>
                     M{(Number(item.price) * item.quantity).toFixed(2)}
                   </strong>
@@ -398,6 +513,7 @@ function App() {
 
               <form className="checkout-form" onSubmit={checkout}>
                 <h3>Customer Details</h3>
+
                 <input
                   type="text"
                   placeholder="Enter your full name"
@@ -405,6 +521,7 @@ function App() {
                   onChange={(event) => setCustomerName(event.target.value)}
                   required
                 />
+
                 <button className="primary-button" type="submit">
                   Place Order
                 </button>
@@ -414,118 +531,268 @@ function App() {
         </section>
       )}
 
-      {page === "staffLogin" && (
+      {/* STAFF PAGE */}
+      {page === "staff" && (
         <section className="section">
-          <h2>Staff Login</h2>
-          <p>Enter staff password to access the dashboard.</p>
-          <form className="checkout-form" onSubmit={handleStaffLogin}>
-            <input
-              type="password"
-              placeholder="Staff password"
-              value={staffPassword}
-              onChange={(event) => setStaffPassword(event.target.value)}
-              required
-            />
-            <button className="primary-button" type="submit">
-              Login
-            </button>
-          </form>
-        </section>
-      )}
+          {!token ? (
+            <div className="staff-form">
+              <h2>Staff Login</h2>
 
-      {page === "staff" && !isStaffLoggedIn && (
-        <section className="section">
-          <h2>Staff Login Required</h2>
-          <p>Please login first to see the Staff Dashboard.</p>
-          <button className="primary-button" onClick={() => setPage("staffLogin")}>
-            Go to Staff Login
-          </button>
-        </section>
-      )}
+              <p>Please log in to access the staff dashboard.</p>
 
-      {page === "staff" && isStaffLoggedIn && (
-        <section className="section">
-          <h2>Staff Dashboard</h2>
-
-          <div className="stats-grid">
-            <div className="stat-card">
-              <h3>{menu.length}</h3>
-              <p>Menu Products</p>
-            </div>
-            <div className="stat-card">
-              <h3>{todaysOrders.length}</h3>
-              <p>Today's Orders</p>
-            </div>
-            <div className="stat-card">
-              <h3>M{dailySales.toFixed(2)}</h3>
-              <p>Today's Sales</p>
-            </div>
-          </div>
-
-          <div className="staff-form">
-            <h3>{editingId ? "Update Product" : "Add New Product"}</h3>
-
-            <form onSubmit={saveMenuItem}>
-              <input
-                type="text"
-                placeholder="Product name"
-                value={form.name}
-                onChange={(e) =>
-                  setForm({ ...form, name: e.target.value })
-                }
-                required
-              />
-
-              <input
-                type="text"
-                placeholder="Description"
-                value={form.description}
-                onChange={(e) =>
-                  setForm({ ...form, description: e.target.value })
-                }
-                required
-              />
-
-              <input
-                type="number"
-                min="0.01"
-                step="0.01"
-                placeholder="Price"
-                value={form.price}
-                onChange={(e) =>
-                  setForm({ ...form, price: e.target.value })
-                }
-                required
-              />
-
-              <select
-                value={form.category}
-                onChange={(e) =>
-                  setForm({ ...form, category: e.target.value })
-                }
-              >
-                <option>Coffee</option>
-                <option>Tea</option>
-                <option>Pastry</option>
-                <option>Other</option>
-              </select>
-
-              <label className="availability-label">
+              <form onSubmit={handleLogin}>
                 <input
-                  type="checkbox"
-                  checked={form.availability}
-                  onChange={(e) =>
-                    setForm({ ...form, availability: e.target.checked })
+                  type="text"
+                  placeholder="Staff username"
+                  value={loginForm.username}
+                  onChange={(event) =>
+                    setLoginForm({
+                      ...loginForm,
+                      username: event.target.value,
+                    })
                   }
+                  required
                 />
-                Available
-              </label>
 
-              <button className="primary-button" type="submit">
-                {editingId ? "Update Product" : "Add Product"}
+                <input
+                  type="password"
+                  placeholder="Staff password"
+                  value={loginForm.password}
+                  onChange={(event) =>
+                    setLoginForm({
+                      ...loginForm,
+                      password: event.target.value,
+                    })
+                  }
+                  required
+                />
+
+                <button className="primary-button" type="submit">
+                  Login
+                </button>
+              </form>
+            </div>
+          ) : (
+            <>
+              <div className="staff-heading">
+                <h2>Staff Dashboard</h2>
+
+                <button onClick={logout}>Logout</button>
+              </div>
+
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <h3>{menu.length}</h3>
+                  <p>Menu Products</p>
+                </div>
+
+                <div className="stat-card">
+                  <h3>{todaysOrders.length}</h3>
+                  <p>Today's Orders</p>
+                </div>
+
+                <div className="stat-card">
+                  <h3>M{dailySales.toFixed(2)}</h3>
+                  <p>Today's Sales</p>
+                </div>
+              </div>
+
+              {/* ADD AND EDIT MENU */}
+              <div className="staff-form">
+                <h3>{editingId ? "Update Product" : "Add New Product"}</h3>
+
+                <form onSubmit={saveMenuItem}>
+                  <input
+                    type="text"
+                    placeholder="Product name"
+                    value={form.name}
+                    onChange={(e) =>
+                      setForm({ ...form, name: e.target.value })
+                    }
+                    required
+                  />
+
+                  <input
+                    type="text"
+                    placeholder="Description"
+                    value={form.description}
+                    onChange={(e) =>
+                      setForm({ ...form, description: e.target.value })
+                    }
+                    required
+                  />
+
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    placeholder="Price"
+                    value={form.price}
+                    onChange={(e) =>
+                      setForm({ ...form, price: e.target.value })
+                    }
+                    required
+                  />
+
+                  <select
+                    value={form.category}
+                    onChange={(e) =>
+                      setForm({ ...form, category: e.target.value })
+                    }
+                  >
+                    <option>Coffee</option>
+                    <option>Tea</option>
+                    <option>Pastry</option>
+                    <option>Other</option>
+                  </select>
+
+                  <label className="availability-label">
+                    <input
+                      type="checkbox"
+                      checked={form.availability}
+                      onChange={(e) =>
+                        setForm({
+                          ...form,
+                          availability: e.target.checked,
+                        })
+                      }
+                    />
+                    Available
+                  </label>
+
+                  <button className="primary-button" type="submit">
+                    {editingId ? "Update Product" : "Add Product"}
+                  </button>
+
+                  {editingId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(null);
+
+                        setForm({
+                          name: "",
+                          description: "",
+                          price: "",
+                          category: "Coffee",
+                          availability: true,
+                        });
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  )}
+                </form>
+              </div>
+
+              {/* MENU MANAGEMENT */}
+              <h3>Manage Menu</h3>
+
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Product</th>
+                      <th>Price</th>
+                      <th>Category</th>
+                      <th>Availability</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {menu.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.name}</td>
+
+                        <td>M{Number(item.price).toFixed(2)}</td>
+
+                        <td>{item.category}</td>
+
+                        <td>
+                          {item.availability ? "Available" : "Unavailable"}
+                        </td>
+
+                        <td>
+                          <button onClick={() => editMenuItem(item)}>
+                            Edit
+                          </button>
+
+                          <button
+                            className="delete-button"
+                            onClick={() => deleteMenuItem(item.id)}
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* CUSTOMER ORDERS */}
+              <h3 className="orders-heading">Customer Orders</h3>
+
+              <button onClick={() => loadOrders(token)}>
+                Refresh Orders
               </button>
 
-              {editingId && (
-                <button
-                  type="button"
-                  on
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Order Number</th>
+                      <th>Customer</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Update Status</th>
+                    </tr>
+                  </thead>
+
+                  <tbody>
+                    {orders.map((order) => (
+                      <tr key={order.id}>
+                        <td>{order.orderNumber}</td>
+
+                        <td>{order.customerName}</td>
+
+                        <td>M{Number(order.total || 0).toFixed(2)}</td>
+
+                        <td>{order.status}</td>
+
+                        <td>
+                          <select
+                            value={order.status}
+                            onChange={(e) =>
+                              updateOrderStatus(order.id, e.target.value)
+                            }
+                          >
+                            <option>Pending</option>
+                            <option>Preparing</option>
+                            <option>Ready</option>
+                            <option>Collected</option>
+                          </select>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
+      <footer className="footer">
+        <h3>☕ Coffee House</h3>
+
+        <p>Fresh coffee. Fresh moments. Every day.</p>
+
+        <p>© 2026 Coffee House. All rights reserved.</p>
+      </footer>
+    </div>
+  );
+}
+
+export default App;
