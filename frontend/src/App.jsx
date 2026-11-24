@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import "./App.css";
 
@@ -15,7 +14,7 @@ const productImages = {
 
 function getProductImage(name) {
   const key = name?.toLowerCase().trim();
-  return productImages[key] || 
+  return productImages[key] ||
     "https://images.unsplash.com/photo-1442512595331-e89e73853f31?auto=format&fit=crop&w=800&q=80";
 }
 
@@ -27,6 +26,30 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [customerName, setCustomerName] = useState("");
+
+  // --- STAFF LOGIN ---
+  const [staffPassword, setStaffPassword] = useState("");
+  const [isStaffLoggedIn, setIsStaffLoggedIn] = useState(false);
+  const STAFF_PASSWORD = "coffee123";
+
+  function handleStaffLogin(event) {
+    event.preventDefault();
+    if (staffPassword === STAFF_PASSWORD) {
+      setIsStaffLoggedIn(true);
+      setStaffPassword("");
+      setPage("staff");
+      setMessage("Welcome, staff!");
+    } else {
+      setMessage("Wrong staff password. Try again.");
+    }
+  }
+
+  function handleStaffLogout() {
+    setIsStaffLoggedIn(false);
+    setStaffPassword("");
+    setPage("home");
+    setMessage("Staff logged out.");
+  }
 
   const [form, setForm] = useState({
     name: "",
@@ -263,7 +286,12 @@ function App() {
           <button onClick={() => setPage("cart")}>
             Cart ({cart.reduce((sum, item) => sum + item.quantity, 0)})
           </button>
-          <button onClick={() => setPage("staff")}>Staff Dashboard</button>
+          <button onClick={() => setPage(isStaffLoggedIn ? "staff" : "staffLogin")}>
+            {isStaffLoggedIn ? "Staff Dashboard" : "Staff Login"}
+          </button>
+          {isStaffLoggedIn && (
+            <button onClick={handleStaffLogout}>Logout Staff</button>
+          )}
         </nav>
       </header>
 
@@ -386,7 +414,36 @@ function App() {
         </section>
       )}
 
-      {page === "staff" && (
+      {page === "staffLogin" && (
+        <section className="section">
+          <h2>Staff Login</h2>
+          <p>Enter staff password to access the dashboard.</p>
+          <form className="checkout-form" onSubmit={handleStaffLogin}>
+            <input
+              type="password"
+              placeholder="Staff password"
+              value={staffPassword}
+              onChange={(event) => setStaffPassword(event.target.value)}
+              required
+            />
+            <button className="primary-button" type="submit">
+              Login
+            </button>
+          </form>
+        </section>
+      )}
+
+      {page === "staff" && !isStaffLoggedIn && (
+        <section className="section">
+          <h2>Staff Login Required</h2>
+          <p>Please login first to see the Staff Dashboard.</p>
+          <button className="primary-button" onClick={() => setPage("staffLogin")}>
+            Go to Staff Login
+          </button>
+        </section>
+      )}
+
+      {page === "staff" && isStaffLoggedIn && (
         <section className="section">
           <h2>Staff Dashboard</h2>
 
@@ -471,106 +528,4 @@ function App() {
               {editingId && (
                 <button
                   type="button"
-                  onClick={() => {
-                    setEditingId(null);
-                    setForm({
-                      name: "",
-                      description: "",
-                      price: "",
-                      category: "Coffee",
-                      availability: true,
-                    });
-                  }}
-                >
-                  Cancel
-                </button>
-              )}
-            </form>
-          </div>
-
-          <h3>Manage Menu</h3>
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Price</th>
-                  <th>Category</th>
-                  <th>Availability</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {menu.map((item) => (
-                  <tr key={item.id}>
-                    <td>{item.name}</td>
-                    <td>M{Number(item.price).toFixed(2)}</td>
-                    <td>{item.category}</td>
-                    <td>{item.availability ? "Available" : "Unavailable"}</td>
-                    <td>
-                      <button onClick={() => editMenuItem(item)}>Edit</button>
-                      <button
-                        className="delete-button"
-                        onClick={() => deleteMenuItem(item.id)}
-                      >
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <h3 className="orders-heading">Customer Orders</h3>
-          <button onClick={loadOrders}>Refresh Orders</button>
-
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Order Number</th>
-                  <th>Customer</th>
-                  <th>Total</th>
-                  <th>Status</th>
-                  <th>Update Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {orders.map((order) => (
-                  <tr key={order.id}>
-                    <td>{order.orderNumber}</td>
-                    <td>{order.customerName}</td>
-                    <td>M{Number(order.total || 0).toFixed(2)}</td>
-                    <td>{order.status}</td>
-                    <td>
-                      <select
-                        value={order.status}
-                        onChange={(e) =>
-                          updateOrderStatus(order.id, e.target.value)
-                        }
-                      >
-                        <option>Pending</option>
-                        <option>Preparing</option>
-                        <option>Ready</option>
-                        <option>Collected</option>
-                      </select>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      )}
-
-      <footer className="footer">
-        <h3>☕ Coffee House</h3>
-        <p>Fresh coffee. Fresh moments. Every day.</p>
-        <p>© 2026 Coffee House. All rights reserved.</p>
-      </footer>
-    </div>
-  );
-}
-
-export default App;
+                  on
